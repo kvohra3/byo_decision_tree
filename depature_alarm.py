@@ -1,6 +1,9 @@
 import datetime
 import requests
 import pandas as pd
+import numpy as np
+
+import tools
 
 def download_data(verbose=True):
     """
@@ -69,6 +72,23 @@ def download_data(verbose=True):
 
     return trips
 
+def get_trips():
+    """
+    Attempt to restore a saved copy.
+    If unsuccessful, download a new one.
+
+    Returns
+    -------
+    trips: list of dictionaries
+    """
+    trips_filename = 'trips.pickle'
+    try:
+        trips = tools.restore(trips_filename)
+    except Exception:
+        trips = download_data()
+        tools.store(trips, trips_filename)
+    return trips
+
 def calculate_arrival_times(
     trips,
     harvard_walk=4,
@@ -123,34 +143,58 @@ def calculate_arrival_times(
 
     if debug:
         print(trips_df)
-    #     tools.custom_scatter(trips_df['departure'], trips_df['arrival'])
+        tools.custom_scatter(trips_df['departure'], trips_df['arrival'])
 
-    # door_arrivals = {}
-    # # Create a new DataFrame with minute-by-minute predictions
-    # for day in trips_df.loc[:, 'date'].unique():
-    #     datestr = day.strftime(date_format)
-    #     trips_today = trips_df.loc[
-    #         trips_df.loc[:, 'date'] == day, :]
-    #     door_arrival = np.zeros(train_dep_max - train_dep_min)
-    #     for i_row, door_departure in enumerate(
-    #             np.arange(train_dep_min, train_dep_max)):
-    #         # Find the next train departure time.
-    #         station_arrival = door_departure + jfk_walk
-    #         try:
+    door_arrivals = {}
+    # Create a new DataFrame with minute-by-minute predictions
+    for day in trips_df.loc[:, 'date'].unique():
+        datestr = day.strftime(date_format)
+        trips_today = trips_df.loc[
+            trips_df.loc[:, 'date'] == day, :]
+        door_arrival = np.zeros(train_dep_max - train_dep_min)
+        for i_row, door_departure in enumerate(
+                np.arange(train_dep_min, train_dep_max)):
+            # Find the next train departure time.
+            station_arrival = door_departure + jfk_walk
+            try:
 
-    #             idx = trips_today.loc[
-    #                 trips_today.loc[:, 'departure'] >=
-    #                 station_arrival, 'departure'].idxmin()
-    #             door_arrival[i_row] = (
-    #                 trips_today.loc[idx, 'arrival'] + harvard_walk)
-    #         except Exception:
-    #             # Fill with not-a-numbers (NaN)
-    #             door_arrival[i_row] = np.nan
+                idx = trips_today.loc[
+                    trips_today.loc[:, 'departure'] >=
+                    station_arrival, 'departure'].idxmin()
+                door_arrival[i_row] = (
+                    trips_today.loc[idx, 'arrival'] + harvard_walk)
+            except Exception:
+                # Fill with not-a-numbers (NaN)
+                door_arrival[i_row] = np.nan
 
-    #     door_arrivals[datestr] = pd.Series(
-    #         door_arrival, index=np.arange(train_dep_min, train_dep_max))
-    # arrival_times_df = pd.DataFrame(door_arrivals)
-    # return arrival_times_df
+        door_arrivals[datestr] = pd.Series(
+            door_arrival, index=np.arange(train_dep_min, train_dep_max))
+    arrival_times_df = pd.DataFrame(door_arrivals)
+    return arrival_times_df
+
+def get_arrival_times(trips_df):
+    """
+    Attempt to restore a saved copy.
+    If unsuccessful, download a new one.
+
+    Parameters
+    ----------
+    trips_df: DataFrame
+
+    Returns
+    -------
+    arrival_times_df: DataFrame
+    """
+    arrival_times_filename = 'arrival_times.pickle'
+    try:
+        arrival_times_df = tools.restore(arrival_times_filename)
+    except Exception:
+        arrival_times_df = None
+    if arrival_times_df is None:
+        arrival_times_df = calculate_arrival_times(trips_df)
+        tools.store(arrival_times_df, arrival_times_filename)
+
+    return arrival_times_df
 
 if __name__ == '__main__':
     """
@@ -160,6 +204,6 @@ if __name__ == '__main__':
         Each command line argument is assumed to be a date string
         of the form YYYY-MM-DD
     """
-    trips = download_data()
+    trips = get_trips()
     arrival_times_df = calculate_arrival_times(trips, debug=True)
-    print(trips)
+    print(arrival_times_df)
